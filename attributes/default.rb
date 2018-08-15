@@ -10,6 +10,6 @@ node.default['pmaschema'] = 'phpmyadmin'
 node.default['pmauser'] = 'pma'
 node.default['pmapass'] = 'pmapass'
 node.default['admin'] = 'admin'
-node.default['adminpass'] = 'admin123!'
+node.default['adminpass'] = 'admin123'
 node.default['portnum'] = '3306'
 

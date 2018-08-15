@@ -19,6 +19,7 @@ elsif platform == 'ubuntu' || platform == 'debian'
   %w(libexpat1-dev libssl-dev libpcre++-dev libxml++2.6-dev libtool-bin libbz2-dev libcurl4-nss-dev libpng-dev default-mysql-client default-mysql-server default-libmysqld-dev).each do |p|
     package p do
       action :install
+      ignore_failure true
     end
   end
   bash 'Open Up MySQL' do
@@ -158,12 +159,31 @@ bash 'Run HTTPD Build' do
   not_if { File.exist?('/tmp/build-httpd') }
 end
 
+template '/etc/systemd/system/apache.service' do
+  source 'apache.service.erb'
+  owner 'root'
+  group 'root'
+  mode '0644'
+  variables ({
+    :apachehome => node['apachehome'],
+  })
+  action :create
+  only_if { File.exist?("#{node['apachehome']}/bin/httpd") }
+end
+
+execute 'Register the new Apache Service' do
+  command 'systemctl daemon-reload | tee -a /tmp/apache-service'
+  action :run
+  not_if { File.exist?('/tmp/apache-service') }
+end
+
 remote_file "/tmp/#{node['php']}.tar.bz2" do
   source "http://php.net/get/#{node['php']}.tar.bz2/from/this/mirror"
   owner 'root'
   group 'root'
   mode '0755'
   action :create
+  not_if { File.exist?("/tmp/#{node['php']}.tar.bz2") }
 end
 
 bash 'Extract PHP' do
@@ -292,8 +312,17 @@ bash 'Create phpMyAdmin tables and Users' do
   not_if { File.exist?('/tmp/db-done') }
 end
 
-execute 'Start Apache' do
-  command "#{node['apachehome']}/bin/apachectl start | tee -a /tmp/apache-started"
-  action :run
-  not_if { File.exist?('/tmp/apache-started') }
+if platform == 'centos' || platform == 'fedora'
+  service 'mariadb' do
+    action :restart
+  end
+elsif platform == 'ubuntu' || platform == 'debian'
+  service 'mysql' do
+    action :restart
+  end
 end
+
+service 'apache' do
+  action [:start, :enable]
+end
+

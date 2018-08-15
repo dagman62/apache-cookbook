@@ -1,0 +1,13 @@
+[Unit]
+Description=Apache Web Server
+After=network.target
+
+[Service]
+Type=forking
+
+ExecStart=<%= @apachehome %>/bin/apachectl start
+ExecReload=<%= @apachehome %>/bin/apachectl restart 
+ExecStop=<%= @apachehome %>/bin/apachectl stop
+
+[Install]
+WantedBy=multi-user.target
