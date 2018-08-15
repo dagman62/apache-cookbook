@@ -1,0 +1,25 @@
+#!/bin/bash
+
+./configure \
+  --with-zlib \
+  --enable-zip \
+  --enable-wddx \
+  --enable-sysvmsg \
+  --enable-sockets \
+  --enable-soap \
+  --enable-shmop \
+  --enable-embedded-mysqli  \
+  --enable-mbstring \
+  --with-mhash \
+  --with-gettext \
+  --with-gd \
+  --enable-ftp \
+  --enable-exif \
+  --enable-dba \
+  --with-curl \
+  --enable-calendar \
+  --with-bz2 \
+  --enable-bcmath \
+  --enable-static \
+  --with-apxs2=<%= @apachehome %>/bin/apxs \
+  --with-mysqli 

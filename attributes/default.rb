@@ -1,0 +1,15 @@
+
+node.default['email'] = 'ggiacalone@example.com'
+node.default['apachehome'] = '/opt/apache'
+node.default['apr'] = 'apr-1.6.3'
+node.default['apru'] = 'apr-util-1.6.1'
+node.default['httpd'] = 'httpd-2.4.34'
+node.default['php'] = 'php-7.2.8'
+node.default['phpmaver'] = '4.8.2'
+node.default['pmaschema'] = 'phpmyadmin'
+node.default['pmauser'] = 'pma'
+node.default['pmapass'] = 'pmapass'
+node.default['admin'] = 'admin'
+node.default['adminpass'] = 'admin123!'
+node.default['portnum'] = '3306'
+
