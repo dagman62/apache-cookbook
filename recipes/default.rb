@@ -5,31 +5,21 @@
 # Copyright:: 2018, The Authors, All Rights Reserved.
 platform = node['platform']
 
+if node.chef_environment != 'remotedb'
+  include_recipe 'database'
+end
+
 if platform == 'centos' || platform == 'fedora'
-  %w(expat-devel openssl-devel pcre-devel bzip2-devel libcurl-devel libxml2-devel libpng-devel libtool mariadb mariadb-server mariadb-devel).each do |p|
+  %w(expat-devel openssl-devel pcre-devel bzip2-devel libcurl-devel libxml2-devel libpng-devel libtool mariadb-devel).each do |p|
     package p do
       action :install
     end
-  end
-  execute 'Open up MariaDB' do
-    command 'perl -pi -e "s/#bind-address=0.0.0.0/bind-address=0.0.0.0/g" /etc/my.cnf.d/mariadb-server.cnf | tee -a /tmp/update-conf'
-    not_if { File.exist?('/tmp/update-conf') }
   end
 elsif platform == 'ubuntu' || platform == 'debian'
-  %w(libexpat1-dev libssl-dev libpcre++-dev libxml++2.6-dev libtool-bin libbz2-dev libcurl4-nss-dev libpng-dev default-mysql-client default-mysql-server default-libmysqld-dev).each do |p|
+  %w(libexpat1-dev libssl-dev libpcre++-dev libxml++2.6-dev libtool-bin libbz2-dev libcurl4-nss-dev libpng-dev).each do |p|
     package p do
       action :install
-      ignore_failure true
     end
-  end
-  bash 'Open Up MySQL' do
-    code <<-EOH
-    echo '[mysqld]' >> /etc/mysql/my.cnf
-    echo 'bind-address=0.0.0.0' >> /etc/mysql/my.cnf
-    touch /tmp/mysqld-done
-    EOH
-    action :run
-    not_if { File.exist?('/tmp/mysqld-done') }
   end
 else
   log "You are runing on Platform #{node['platform']}, this platform is not supported!" do
@@ -229,97 +219,53 @@ template "#{node['apachehome']}/conf/httpd.conf" do
   action :create
 end
 
-remote_file "/tmp/phpMyAdmin-#{node['phpmaver']}-english.tar.gz" do
-  source "https://files.phpmyadmin.net/phpMyAdmin/#{node['phpmaver']}/phpMyAdmin-#{node['phpmaver']}-english.tar.gz"
+directory "#{node['confdir']}" do
   owner 'root'
   group 'root'
   mode '0755'
   action :create
 end
 
-bash 'Extract phpMyAdmin to htdocs' do
-  code <<-EOH
-  tar -zxvf /tmp/phpMyAdmin-#{node['phpmaver']}-english.tar.gz -C #{node['apachehome']}/htdocs/
-  mv #{node['apachehome']}/htdocs/phpMyAdmin-#{node['phpmaver']}-english #{node['apachehome']}/htdocs/phpMyAdmin
-  EOH
-  action :run
-  not_if { File.exist?("#{node['apachehome']}/htdocs/phpMyAdmin") }
-end
-
-template "#{node['apachehome']}/htdocs/phpMyAdmin/config.inc.php" do
-  source 'config.inc.php.erb'
-  owner 'root'
-  group 'root'
-  mode '0644'
-  variables ({
-    :hostname  => node['hostname'],
-    :ipaddress => node['ipaddress'],
-    :portnum   => node['portnum'],
-    :pmaschema => node['pmaschema'],
-    :admin     => node['admin'],
-    :adminpass => node['adminpass'],
-    :pmauser   => node['pmauser'],
-    :pmapass   => node['pmapass'],
-  })
-  action :create
-end
-
-if platform == 'centos' || platform == 'fedora'
-  service 'mariadb' do
-    action [:start, :enable]
-  end
-elsif platform == 'ubuntu' || platform == 'debian'
-  service 'mysql' do
-    action [:start, :enable]
-  end
-else
-  log "You are runing on Platform #{node['platform']}, this platform is not supported!" do
-    level :info
-  end
-end
-
-cookbook_file '/tmp/create_tables.sql' do
-  source 'create_tables.sql'
-  owner 'root'
-  group 'root'
-  mode '0755'
-  action :create
-end
-
-template '/tmp/pma.sql' do
-  source 'pma.sql.erb'
+template "#{node['apachehome']}/bin/rotateLog.sh" do
+  source 'rotateLog.sh.erb'
   owner 'root'
   group 'root'
   mode '0755'
   variables ({
-    :pmaschema => node['pmaschema'],
-    :pmauser   => node['pmauser'],
-    :pmapass   => node['pmapass'],
-    :fqdn      => node['fqdn'],
-    :admin     => node['admin'],
-    :adminpass => node['adminpass'],
+    :confdir    =>  node['confdir'],
+    :apachehome =>  node['apachehome'],
+    :email      =>  node['email'],
   })
   action :create
 end
 
-bash 'Create phpMyAdmin tables and Users' do
-  code <<-EOH
-  mysql < /tmp/create_tables.sql
-  mysql < /tmp/pma.sql
-  touch /tmp/db-done
-  EOH
-  action :run
-  not_if { File.exist?('/tmp/db-done') }
+cron 'RotateLog' do
+  hour '0'
+  minute '0'
+  command "#{node['apachehome']}/bin/rotateLog.sh > /dev/null 2>&1"
+  action :create
 end
 
-if platform == 'centos' || platform == 'fedora'
-  service 'mariadb' do
-    action :restart
-  end
-elsif platform == 'ubuntu' || platform == 'debian'
-  service 'mysql' do
-    action :restart
-  end
+template "#{node['apachehome']}/bin/createindex.php" do
+  source 'createindex.php.erb'
+  owner 'root'
+  group 'root'
+  mode '0755'
+  variables ({
+    :apachehome =>  node['apachehome'],
+    :dbhost     =>  node['dbhost'],
+    :admuser    =>  node['admuser'],
+    :admpass    =>  node['admpass'],
+    :dbschema   =>  node['dbschema'],
+  })
+  action :create
+end
+
+cron 'QueryOneIndex' do
+  hour '0'
+  minute '0'
+  command "/usr/local/bin/php #{node['apachehome']}/bin/createindex.php > /dev/null 2>&1"
+  action :create
 end
 
 service 'apache' do

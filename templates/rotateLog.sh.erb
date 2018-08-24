@@ -1,0 +1,162 @@
+#!/bin/bash
+
+# Make sure this is run as root, if not, bail
+if [ `whoami` != "root" ] ; then
+   echo "Must be root to run this, exiting."
+   exit 100
+fi
+
+# set some vars
+HOSTNAME=$(hostname)
+CONF_DIR=<%= @confdir %>
+CONF_FILE=$CONF_DIR/$HOSTNAME.conf
+SCRIPT_LOG=$CONF_DIR/log/`hostname`.log
+OUT_FILE=/tmp/$HOSTNAME.rotateLog.log
+emailme=<%= @emial %>
+DATE=`date`
+DATE_SHORT=`date +%m.%d.%y`
+# solaris "mail" doesn't allow -s subject flag, so use mailx there
+mail=/bin/mail
+[ `uname` == "SunOS" ] && mail=/usr/bin/mailx
+emailsub="Problem with log rotation on $HOSTNAME $DATE"
+export PATH=/usr/local/bin:$PATH
+
+# Default Newsyslog conf settings
+owner=deamon
+group=daemon
+mode=644
+#maxsizekb=4096000
+maxsizekb=15960
+keepprod=60
+keep=60
+keepnonprod=14
+hours=168
+
+# sanity checks
+[ ! -w $CONF_DIR ] && echo "Cant write to $CONF_DIR. Exiting..." && exit 1
+
+logtypes="web"
+# note, don't call rotateLog here; we manually call it at the end to avoid a truncated file as this process outputs to said file :)
+
+function generate_header() {
+  cat - <<EOF > $CONF_FILE
+ # file built automatically by $emailme $DATE_SHORT
+ # format:
+ # logfile [ owner.group ] mode number maxsize(kb) hours [ flags ]
+ #
+EOF
+}
+
+# generate config for apache instances
+function generate_web() {
+  logfiles=`find <%= @apachehome %>/logs -type f -name '*log' -print`
+  echo "#Apache logfiles:" >> $CONF_FILE
+  for lf in $logfiles
+  do
+    owner=root
+    group=bin
+    #Make sure the log exists, if not, skip it (this isn't a bad thing, not all logs exist everywhere)
+    if [ -f "$lf" ] ; then
+      echo "$lf $owner.$group $mode $keep $maxsizekb $hours" >> $CONF_FILE
+    fi
+  done
+  echo "#End Apache logfiles" >> $CONF_FILE
+}
+
+## rotate logs
+function rotateLog () {
+  ## expects two args, full path to the real log file and the owner of the files
+  OWNER=$2
+  if [ -f $1 ] ; then
+    ROTATED_LOG=$1.$DATE_SHORT
+    cp -p $1 $ROTATED_LOG
+    cat /dev/null > $1
+    # send a couple lines of the old log, to the new (fixes wrapper monitor log)
+    tail -5 $ROTATED_LOG > $1
+    echo " Log: $1, rotated: $ROTATED_LOG" |tee -a $SCRIPT_LOG
+  else
+    echo " -- Date: $DATE --" |tee -a $SCRIPT_LOG
+    echo " Found a conf entry, but no actual log file exists: $1." |tee -a $SCRIPT_LOG
+  fi
+}
+
+## compress logs
+function compressLog () {
+  ## expects one arg, full path to the real log file
+
+  TO_COMPRESS=$1.$DATE_SHORT
+  if [ -f $TO_COMPRESS ] ; then
+    gzip $TO_COMPRESS
+    echo " Log: $TO_COMPRESS, compressed: $TO_COMPRESS.gz" |tee -a $SCRIPT_LOG
+  else
+    echo " -- Date: $DATE --" |tee -a $SCRIPT_LOG
+    echo " Found a conf entry, but no actual log file exists to compress: $1." |tee -a $SCRIPT_LOG
+  fi
+}
+
+## delete old logs
+function deleteLogs () {
+  ## expects two args: 1) full path to the real log file,
+  ## 2) number in days of files to keep
+
+  DIR_NAME=`dirname $1`
+  FILE_NAME=`basename $1`
+  if [ -d $DIR_NAME ] ; then
+    find $DIR_NAME -type f -name "$FILE_NAME.*" -mtime +$2 -exec rm -Rf {} \;
+  fi
+}
+
+## checks that this script hasn't run more than once a day, per log
+function checkPreviousRun () {
+  ## expects one arg, LOG
+  
+  if [ -f $1.$DATE_SHORT.gz ] ; then
+     echo "  *!* Log $1 has already been rotated/compressed, skipping." |tee -a $SCRIPT_LOG
+     ## pass back non 0 to 'fail'
+     return 1
+  fi
+}
+
+generate_header
+generate_web
+
+if [ $1 ] ; then
+  echo "Conf file created:$CONF_FILE - exiting!" |tee -a $SCRIPT_LOG
+  exit 0
+fi
+
+## Proceed w/ archiving/compression/deleting files now 
+if [ -f $CONF_FILE ] ; then
+   echo "Proceeding w/ rotation/compression/archiving of logs" |tee -a $SCRIPT_LOG
+   while read line
+   do
+    RESULT=`echo $line|grep -v "^\#"` 
+    if [ "$RESULT" ] ; then
+      LOG=`echo $RESULT|awk '{print $1}'`
+      OWNER_GROUP=`echo $RESULT|awk '{print $2}'`
+      PERMS=`echo $RESULT|awk '{print $3}'`
+      MAX_NUM_LOG=`echo $RESULT|awk '{print $4}'`
+      MAX_SIZE_LOG=`echo $RESULT|awk '{print $5}'`
+      MAX_HOURS_LOG=`echo $RESULT|awk '{print $6}'`
+    
+      #set owner group by (.) delimiter
+      OWNER=`echo $OWNER_GROUP|awk -F . '{print $1}'`
+      GROUP=`echo $OWNER_GROUP|awk -F . '{print $2}'`
+   
+      checkPreviousRun $LOG 
+      if [ $? -ne 0 ]; then
+         ##check the return code and continues from the current loop iteration, to check the other logs
+         continue
+      fi
+
+      rotateLog $LOG $OWNER
+      compressLog $LOG $OWNER $GROUP
+      deleteLogs $LOG $MAX_NUM_LOG
+    fi
+   done < $CONF_FILE
+  else
+    echo " -- Date: $DATE --" |tee -a $SCRIPT_LOG
+    echo " No logs found.  Looking elsewhere!" |tee -a $SCRIPT_LOG
+    exit 1
+fi
+#exit 0
