@@ -1,5 +1,0 @@
-grant all on <%= @pmaschema%>.* to '<%= @pmauser %>'@'localhost' identified by '<%= @pmapass %>' with grant option;
-grant all on <%= @pmaschema%>.* to '<%= @pmauser %>'@'<%= @fqdn %>' identified by '<%= @pmapass %>' with grant option;
-grant all on *.* to '<%= @admin %>'@'localhost' identified by '<%= @adminpass %>' with grant option;
-grant all on *.* to '<%= @admin %>'@'%' identified by '<%= @adminpass %>' with grant option;
-grant all on *.* to '<%= @admin %>'@'<%= @fqdn %>' identified by '<%= @adminpass %>' with grant option;

@@ -3,20 +3,18 @@
 # Recipe:: default
 #
 # Copyright:: 2018, The Authors, All Rights Reserved.
+include_recipe 'tar::default'
+
 platform = node['platform']
 
-if node.chef_environment != 'remotedb'
-  include_recipe 'database'
-end
-
 if platform == 'centos' || platform == 'fedora'
-  %w(expat-devel openssl-devel pcre-devel bzip2-devel libcurl-devel libxml2-devel libpng-devel libtool mariadb-devel).each do |p|
+  %w(postgresql-devel expat-devel openssl-devel pcre-devel bzip2-devel libcurl-devel libxml2-devel libpng-devel libtool mariadb-devel).each do |p|
     package p do
       action :install
     end
   end
 elsif platform == 'ubuntu' || platform == 'debian'
-  %w(libexpat1-dev libssl-dev libpcre++-dev libxml++2.6-dev libtool-bin libbz2-dev libcurl4-nss-dev libpng-dev).each do |p|
+  %w(default-libmysqlclient-dev default-libmysqld-dev postgresql-server-dev-all libexpat1-dev libssl-dev libpcre++-dev libxml++2.6-dev libtool-bin libbz2-dev libcurl4-nss-dev libpng-dev).each do |p|
     package p do
       action :install
     end
@@ -27,126 +25,44 @@ else
   end
 end
 
-remote_file "/tmp/#{node['apr']}.tar.bz2" do
-  source "http://www-us.apache.org/dist/apr/#{node['apr']}.tar.bz2"
-  owner 'root'
-  group 'root'
-  mode '0755'
-  action :create
+tar_package "http://www-us.apache.org/dist/apr/apr-#{node['aprver']}.tar.gz" do 
+  prefix "#{node['apachehome']}"
+  creates "#{node['apachehome']}/bin/apr-1-config"
 end
 
-bash 'Extract APR' do
+tar_package "http://www-us.apache.org/dist/apr/apr-util-#{node['apruver']}.tar.gz" do 
+  prefix "#{node['apachehome']}"
+  configure_flags ["--with-apr=#{node['apachehome']}/bin/apr-1-config"]
+  creates "#{node['apachehome']}/bin/apru-1-config"
+end
+
+bash 'Register the expat libapru libraries' do
   code <<-EOH
-  tar -jxvf /tmp/#{node['apr']}.tar.bz2 -C /tmp
+  libtool --finish #{node['apachehome']}/lib
+  touch /tmp/libapru-done
   EOH
   action :run
+  not_if { File.exist?('/tmp/libapru-done') }
 end
 
-template "/tmp/#{node['apr']}/configure.sh" do
-  source 'configure-apr.sh.erb'
-  owner 'root'
-  group 'root'
-  mode '0755'
-  variables ({
-    :apachehome => node['apachehome'],
-  })
-  action :create
-end
-
-bash 'Run Apr Build' do
-  code <<-EOH
-  cd /tmp/#{node['apr']}
-  ./configure.sh
-  make && make install
-  touch /tmp/build-apr
-  EOH
-  action :run
-  not_if { File.exist?('/tmp/build-apr') }
-end
-
-remote_file "/tmp/#{node['apru']}.tar.bz2" do
-  source "http://www-us.apache.org/dist/apr/#{node['apru']}.tar.bz2"
-  owner 'root'
-  group 'root'
-  mode '0755'
-  action :create
-end
-
-bash 'Extract APRU' do
-  code <<-EOH
-  tar -jxvf /tmp/#{node['apru']}.tar.bz2 -C /tmp
-  EOH
-  action :run
-end
-
-template "/tmp/#{node['apru']}/configure.sh" do
-  source 'configure-apru.sh.erb'
-  owner 'root'
-  group 'root'
-  mode '0755'
-  variables ({
-    :apachehome => node['apachehome'],
-  })
-  action :create
-end
-
-bash 'Run Apru Build' do
-  code <<-EOH
-  cd /tmp/#{node['apru']}
-  ./configure.sh
-  make && make install
-  touch /tmp/build-apru
-  EOH
-  action :run
-  not_if { File.exist?('/tmp/build-apru') }
-end
-
-if platform == 'ubuntu' || platform == 'debian'
-  bash 'Register the expat libapru libraries' do
-    code <<-EOH
-    libtool --finish #{node['apachehome']}/lib
-    touch /tmp/libapru-done
-    EOH
-    action :run
-    not_if { File.exist?('/tmp/libapru-done') }
-  end
-end
-  
-remote_file "/tmp/#{node['httpd']}.tar.bz2" do
-  source "http://www-us.apache.org/dist/httpd/#{node['httpd']}.tar.bz2"
-  owner 'root'
-  group 'root'
-  mode '0755'
-  action :create
-end
-
-bash 'Extract HTTPD' do
-  code <<-EOH
-  tar -jxvf /tmp/#{node['httpd']}.tar.bz2 -C /tmp
-  EOH
-  action :run
-end
-
-template "/tmp/#{node['httpd']}/configure.sh" do
-  source 'configure.sh.erb'
-  owner 'root'
-  group 'root'
-  mode '0755'
-  variables ({
-    :apachehome => node['apachehome'],
-  })
-  action :create
-end
-
-bash 'Run HTTPD Build' do
-  code <<-EOH
-  cd /tmp/#{node['httpd']}
-  ./configure.sh
-  make && make install
-  touch /tmp/build-httpd
-  EOH
-  action :run
-  not_if { File.exist?('/tmp/build-httpd') }
+tar_package "http://www-us.apache.org/dist/httpd/httpd-#{node['httpver']}.tar.gz" do
+  prefix "#{node['apachehome']}"
+  configure_flags [
+    '--enable-ssl',
+    '--enable-proxy',
+    '--enable-modules=all',
+    '--enable-mods-shared=all',
+    '--enable-module=so',
+    '--enable-proxy-http',
+    '--enable-proxy-balancer',
+    '--enable-proxy-ajp',
+    '--with-ssl',
+    '--with-mpm=prefork',
+    "--with-apr=#{node['apachehome']}/bin/apr-1-config",
+    "--with-apr-util=#{node['apachehome']}/bin/apu-1-config",
+    '--enable-cgi',
+  ]
+  creates "#{node['apachehome']}/bin/httpd"
 end
 
 template '/etc/systemd/system/apache.service' do
@@ -167,43 +83,35 @@ execute 'Register the new Apache Service' do
   not_if { File.exist?('/tmp/apache-service') }
 end
 
-remote_file "/tmp/#{node['php']}.tar.bz2" do
-  source "http://php.net/get/#{node['php']}.tar.bz2/from/this/mirror"
-  owner 'root'
-  group 'root'
-  mode '0755'
-  action :create
-  not_if { File.exist?("/tmp/#{node['php']}.tar.bz2") }
-end
-
-bash 'Extract PHP' do
-  code <<-EOH
-  tar -jxvf /tmp/#{node['php']}.tar.bz2 -C /tmp
-  EOH
-  action :run
-end
-
-template "/tmp/#{node['php']}/configure.sh" do
-  source 'configure-php.sh.erb'
-  owner 'root'
-  group 'root'
-  mode '0755'
-  variables ({
-    :apachehome => node['apachehome'],
-  })
-  action :create
-end
-
-bash 'Run PHP Build' do
-  code <<-EOH
-  cd /tmp/#{node['php']}
-  ./configure.sh
-  make && make install
-  libtool --finish /tmp/#{node['php']}/lib
-  touch /tmp/build-php
-  EOH
-  action :run
-  not_if { File.exist?('/tmp/build-php') }
+tar_package "http://php.net/get/php-#{node['phpver']}.tar.gz/from/this/mirror" do
+  prefix '/usr/local'
+  archive_name "php-#{node['phpver']}.tar.gz"
+  configure_flags [
+    '--with-zlib',
+    '--enable-zip',
+    '--enable-wddx',
+    '--enable-sysvmsg',
+    '--enable-sockets',
+    '--enable-soap',
+    '--enable-shmop',
+    '--enable-embedded-mysqli',
+    '--enable-mbstring',
+    '--with-mhash',
+    '--with-gettext',
+    '--with-gd',
+    '--enable-ftp',
+    '--enable-exif',
+    '--enable-dba',
+    '--with-curl',
+    '--enable-calendar',
+    '--with-bz2',
+    '--enable-bcmath',
+    '--enable-static',
+    '--with-mysqli',
+    '--with-pgsql',
+    "--with-apxs2=#{node['apachehome']}/bin/apxs",
+  ]
+  creates '/usr/local/bin/php'
 end
 
 template "#{node['apachehome']}/conf/httpd.conf" do
@@ -243,28 +151,6 @@ cron 'RotateLog' do
   hour '0'
   minute '0'
   command "#{node['apachehome']}/bin/rotateLog.sh > /dev/null 2>&1"
-  action :create
-end
-
-template "#{node['apachehome']}/bin/createindex.php" do
-  source 'createindex.php.erb'
-  owner 'root'
-  group 'root'
-  mode '0755'
-  variables ({
-    :apachehome =>  node['apachehome'],
-    :dbhost     =>  node['dbhost'],
-    :admuser    =>  node['admuser'],
-    :admpass    =>  node['admpass'],
-    :dbschema   =>  node['dbschema'],
-  })
-  action :create
-end
-
-cron 'QueryOneIndex' do
-  hour '0'
-  minute '0'
-  command "/usr/local/bin/php #{node['apachehome']}/bin/createindex.php > /dev/null 2>&1"
   action :create
 end
 
