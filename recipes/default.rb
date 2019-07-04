@@ -11,14 +11,14 @@ if platform == 'centos' || platform == 'fedora'
   %w(postgresql-devel expat-devel openssl-devel pcre-devel bzip2-devel libcurl-devel libxml2-devel libpng-devel libtool mariadb-devel).each do |p|
     package p do
       action :install
-      ingnore_failure true
+      ignore_failure true
     end
   end
 elsif platform == 'ubuntu' || platform == 'debian'
   %w(default-libmysqlclient-dev default-libmysqld-dev postgresql-server-dev-all libexpat1-dev libssl-dev libpcre++-dev libxml++2.6-dev libtool-bin libbz2-dev libcurl4-nss-dev libpng-dev).each do |p|
     package p do
       action :install
-      ingnore_failure true
+      ignore_failure true
     end
   end
 else
